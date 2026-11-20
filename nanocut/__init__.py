@@ -1,0 +1,1 @@
+"""NanoCut desktop video editor."""

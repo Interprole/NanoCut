@@ -1,0 +1,37 @@
+name: Windows desktop verification
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**.py"
+      - "web/**"
+      - "packaging/**"
+      - "requirements*.txt"
+      - ".github/workflows/windows.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the desktop runtime
+        shell: powershell
+        run: |
+          ./packaging/setup.ps1
+          $pythonDir = [IO.File]::ReadAllText("$env:LOCALAPPDATA\NanoCutRuntime\python-path.txt")
+          $pythonDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "$env:LOCALAPPDATA\NanoCutRuntime\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Verify real frame and audio exports
+        run: python -m unittest discover -s tests -v
+      - name: Exercise the editor window
+        shell: pwsh
+        run: |
+          python -m pip install playwright
+          $env:NANOCUT_TEST_BROWSER = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
+          python tests/smoke_ui.py

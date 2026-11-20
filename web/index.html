@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>NanoCut</title>
+    <link rel="icon" href="icon.svg" />
+    <link rel="stylesheet" href="style.css" />
+    <script defer src="timeline.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <header>
+      <div class="brand"><img src="icon.svg" alt="" /><b>NanoCut</b></div>
+      <div class="menu-wrap">
+        <button id="project-menu" aria-label="Project menu">File ▾</button>
+        <div id="file-menu" class="popup" hidden>
+          <button data-action="new">New project <kbd>Ctrl N</kbd></button
+          ><button data-action="open">Open project… <kbd>Ctrl O</kbd></button
+          ><button data-action="save">Save project <kbd>Ctrl S</kbd></button
+          ><button data-action="save-as">Save as…</button
+          ><button data-action="recover">Recover last session</button
+          ><button data-action="demo">Open example project</button>
+        </div>
+      </div>
+      <span class="divider"></span
+      ><input
+        id="name"
+        aria-label="Project name"
+        value="Untitled project"
+        maxlength="100"
+      /><span id="save-state" class="muted small"></span>
+      <div class="grow"></div>
+      <button id="project-settings" title="Project canvas and frame rate">
+        Project settings</button
+      ><button id="export" class="primary">
+        Export <span aria-hidden="true">↗</span>
+      </button>
+    </header>
+    <main>
+      <aside class="media panel">
+        <div class="panel-title">
+          <h2>Media pool</h2>
+          <span id="asset-count" class="count">0</span>
+        </div>
+        <div class="media-actions">
+          <button id="import" class="light">＋ Import media</button
+          ><button
+            id="download"
+            title="Download a YouTube or TikTok excerpt"
+            aria-label="Download media"
+          >
+            ↓
+          </button>
+        </div>
+        <div id="assets"></div>
+        <div class="side-bottom">
+          <button id="tiktok">♫ &nbsp; TikTok studio</button
+          ><button
+            id="shortcuts"
+            title="Keyboard shortcuts"
+            aria-label="Keyboard shortcuts"
+          >
+            ?
+          </button>
+        </div>
+      </aside>
+      <section class="monitor panel">
+        <div class="panel-title">
+          <h2>Program monitor</h2>
+          <span id="monitor-meta" class="meta"></span>
+        </div>
+        <div id="viewer">
+          <div id="stage">
+            <div id="layers"></div>
+            <div id="captions"></div>
+          </div>
+          <div id="welcome">
+            <span class="empty-mark" aria-hidden="true">▷</span>
+            <h1>Your first cut</h1>
+            <p>Import footage to start a timeline.</p>
+            <button id="welcome-import" class="light">Import media</button
+            ><button id="demo" class="text-btn">
+              Try the example project ↗
+            </button>
+          </div>
+        </div>
+        <div class="transport">
+          <span id="timecode" class="mono clock">00:00:00:00</span>
+          <div class="transport-buttons">
+            <button
+              id="prev"
+              title="Previous frame (Left)"
+              aria-label="Previous frame"
+            >
+              ‹</button
+            ><button
+              id="play"
+              title="Play or pause (Space)"
+              aria-label="Play or pause"
+            >
+              ▶</button
+            ><button
+              id="next"
+              title="Next frame (Right)"
+              aria-label="Next frame"
+            >
+              ›
+            </button>
+          </div>
+          <select
+            id="play-rate"
+            aria-label="Preview speed"
+            title="Preview speed"
+          >
+            <option value=".25">0.25×</option>
+            <option value=".5">0.5×</option>
+            <option selected value="1">1×</option>
+            <option value="1.5">1.5×</option>
+            <option value="2">2×</option>
+            <option value="4">4×</option>
+          </select>
+        </div>
+      </section>
+      <aside class="inspector panel">
+        <div class="panel-title">
+          <h2>Inspector</h2>
+          <span class="meta">CLIP</span>
+        </div>
+        <div id="inspect"></div>
+      </aside>
+    </main>
+    <section class="timeline panel">
+      <div class="timeline-head">
+        <h2>Timeline</h2>
+        <div class="toolgroup">
+          <button id="undo" title="Undo (Ctrl Z)">↶</button
+          ><button id="redo" title="Redo (Ctrl Shift Z)">↷</button>
+        </div>
+        <div class="toolgroup">
+          <button id="split" title="Split selected clip at playhead (S)">
+            ✂ Split</button
+          ><button id="duplicate" title="Duplicate selected clip (Ctrl D)">
+            Duplicate</button
+          ><button id="delete" title="Delete selected clip (Delete)">
+            Delete
+          </button>
+        </div>
+        <button
+          id="snap"
+          aria-pressed="true"
+          title="Snap to playhead and clip edges"
+        >
+          Snap
+        </button>
+        <div class="grow"></div>
+        <button id="fit" title="Fit timeline">Fit</button
+        ><label class="zoom"
+          >−
+          <input
+            id="zoom"
+            type="range"
+            min="0"
+            max="100"
+            value="42"
+            aria-label="Timeline zoom"
+          />
+          ＋</label
+        >
+      </div>
+      <div class="track-area">
+        <div id="lane-labels">
+          <div class="ruler-label">TRACKS</div>
+          <div><em>V2</em> Overlay</div>
+          <div><em>V1</em> Video</div>
+          <div><em>A1</em> Audio</div>
+        </div>
+        <div id="scroll">
+          <div id="seq">
+            <div id="ruler"></div>
+            <div class="lane" data-track="2"></div>
+            <div class="lane" data-track="1"></div>
+            <div class="lane" data-track="0"></div>
+            <div id="needle"></div>
+          </div>
+        </div>
+      </div>
+      <footer>
+        <span id="status" role="status">Ready</span>
+        <div class="grow"></div>
+        <span id="grid-status"></span><span id="duration" class="mono"></span>
+      </footer>
+    </section>
+    <dialog id="modal">
+      <form id="form">
+        <div class="dialog-head">
+          <h2 id="dialog-title"></h2>
+          <button type="button" id="close-modal" aria-label="Close">×</button>
+        </div>
+        <div id="fields"></div>
+        <div class="dialog-foot">
+          <button id="modal-cancel" type="button">Cancel</button
+          ><button class="primary" id="submit">Apply</button>
+        </div>
+      </form>
+    </dialog>
+    <div id="busy" hidden>
+      <section>
+        <span class="spinner"></span>
+        <h2 id="busy-title">Working</h2>
+        <p id="busy-label"></p>
+        <progress id="progress" max="1"></progress
+        ><button id="change-model" hidden>Change model…</button>
+        <button id="stop-job">Cancel task</button>
+      </section>
+    </div>
+  </body>
+</html>

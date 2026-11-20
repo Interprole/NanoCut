@@ -7,3 +7,4 @@ build/
 *.spec
 .env
 
+.ruff_cache/
