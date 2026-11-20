@@ -1,66 +1,94 @@
-name: Windows desktop verification
+name: Windows desktop release
 on:
   push:
     branches: [main]
-    paths:
-      - "**.py"
-      - "web/**"
-      - "packaging/**"
-      - "requirements*.txt"
-      - ".github/workflows/windows.yml"
+    paths-ignore: ['downloads/**']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   verify:
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install the desktop runtime
-        shell: powershell
-        run: |
-          ./packaging/setup.ps1
-          $pythonDir = [IO.File]::ReadAllText("$env:LOCALAPPDATA\NanoCutRuntime\python-path.txt")
-          $pythonDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          "$env:LOCALAPPDATA\NanoCutRuntime\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-      - name: Verify real frame and audio exports
-        run: python -m unittest discover -s tests -v
-      - name: Exercise the editor window
+      - name: Build Windows GUI and graphical installer
         shell: pwsh
         run: |
+          dotnet build desktop/NanoCut.csproj -c Release -o dist/host
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $compiler = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          if (!(Test-Path $compiler)) { choco install nsis -y --no-progress }
+          & $compiler packaging/installer.nsi
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Install twice and verify dependency reuse
+        shell: pwsh
+        run: |
+          $setup = Resolve-Path dist/NanoCut-1.1-Setup.exe
+          $app = "$env:LOCALAPPDATA\Programs\NanoCut"
+          $cfg = "$env:LOCALAPPDATA\NanoCutRuntime\runtime-1.1.json"
+          for ($i=0; $i -lt 2; $i++) {
+            if ($i) { $env:PIP_NO_INDEX = "1" }
+            $p = Start-Process $setup -ArgumentList '/S /COREONLY' -PassThru -Wait
+            if ($p.ExitCode -ne 0) {
+              Get-Content "$env:LOCALAPPDATA\NanoCutRuntime\setup.log" -Tail 40 -ErrorAction SilentlyContinue
+              throw "Installer failed on pass $i."
+            }
+            $config = Get-Content $cfg -Raw | ConvertFrom-Json
+            $check = & $config.python -c "import yt_dlp,os;print(os.stat(yt_dlp.__file__).st_mtime_ns)"
+            if ($i -and $check -ne $first) { throw "A satisfied package was replaced." }
+            $first = $check
+          }
+          (Split-Path $config.python) >> $env:GITHUB_PATH
+          $config.paths | ForEach-Object { $_ >> $env:GITHUB_PATH }
+          if ((Get-Item "$app\NanoCut.exe").VersionInfo.ProductVersion -notlike '1.1*') { throw "Incorrect desktop version." }
+      - name: Test exports and edit a project
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m pip install playwright
           $env:NANOCUT_TEST_BROWSER = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
           python tests/smoke_ui.py
-      - name: Launch the installed Start menu shortcut
+      - name: Launch installed desktop window
         shell: pwsh
         run: |
-          $installer = Start-Process ".\downloads\NanoCut-Setup.exe" -ArgumentList "/S" -PassThru -Wait
-          if ($installer.ExitCode -ne 0) { throw "The installer failed." }
-          $installed = "$env:LOCALAPPDATA\Programs\NanoCut"
-          foreach ($file in @("NanoCut.py", "web/app.js", "packaging/setup.ps1")) {
-            if ((git hash-object --no-filters "$installed/$file") -ne (git rev-parse "HEAD:$file")) {
-              throw "The installer contains an outdated copy of $file."
-            }
-          }
           $shortcut = Join-Path ([Environment]::GetFolderPath("Programs")) "NanoCut\NanoCut.lnk"
           Start-Process $shortcut
-          $deadline = [DateTime]::UtcNow.AddSeconds(40)
-          $localUrl = $null
+          $deadline = [DateTime]::UtcNow.AddSeconds(45)
           do {
-            Start-Sleep -Milliseconds 500
-            $processes = Get-CimInstance Win32_Process -Filter "Name='msedge.exe' OR Name='chrome.exe'"
-            foreach ($process in $processes) {
-              if ($process.CommandLine -match '--app=(http://127\.0\.0\.1:\d+/[A-Za-z0-9_-]+/)') {
-                $localUrl = $Matches[1]
-                break
-              }
-            }
-          } until ($localUrl -or [DateTime]::UtcNow -gt $deadline)
-          if (-not $localUrl) { throw "The installed desktop window did not start." }
-          $response = Invoke-WebRequest -Uri $localUrl
-          if ($response.Content -notmatch '<title>NanoCut</title>') { throw "The desktop window did not load the editor." }
-          Write-Host "The installed editor opened from its Start menu shortcut."
+            Start-Sleep -Milliseconds 400
+            $editor = Get-Process NanoCut -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like 'NanoCut 1.1*Editor' }
+          } until ($editor -or [DateTime]::UtcNow -gt $deadline)
+          if (!$editor) { throw "The installed WebView2 editor did not finish loading." }
+          $editor.CloseMainWindow()
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NanoCut-1.1-Windows
+          path: dist/NanoCut-1.1-Setup.exe
+  release:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: NanoCut-1.1-Windows
+          path: dist
+      - name: Publish version 1.1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v1.1 >/dev/null 2>&1; then exit 0; fi
+          gh release create v1.1 dist/NanoCut-1.1-Setup.exe --target "$GITHUB_SHA" --title 'NanoCut 1.1' --notes 'Native Windows desktop window. Graphical setup installs selected components and speech models, reuses compatible dependencies, and supports upgrades from 1.0.'
+          cp dist/NanoCut-1.1-Setup.exe downloads/NanoCut-Setup.exe
+          git config user.name github-actions
+          git config user.email github-actions@users.noreply.github.com
+          git add downloads/NanoCut-Setup.exe
+          git commit -m 'Distribute verified version 1.1 through the existing download link'
+          git push origin HEAD:main

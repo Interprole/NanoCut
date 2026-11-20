@@ -123,7 +123,7 @@ def download(d, notify):
         import yt_dlp
         from yt_dlp.utils import download_range_func
     except ImportError:
-        raise ValueError("Install the download tools using Setup.cmd or the README.") from None
+        raise ValueError("Install the download tools by rerunning NanoCut Setup.") from None
     a = n(d.get("from", 0), 0, 10**7)
     b = n(d["to"], 0, 10**7) if d.get("to") is not None else float("inf")
     if b <= a:
@@ -201,7 +201,7 @@ def transcribe(d, notify):
     try:
         from faster_whisper import WhisperModel
     except ImportError:
-        raise ValueError("Install local AI tools first. On Windows, run Install-AI.cmd.") from None
+        raise ValueError("Install local AI tools first. Select the AI components in NanoCut Setup.") from None
     import numpy as np
 
     model = d["model"]
@@ -212,9 +212,16 @@ def transcribe(d, notify):
         audio = Path(tmp) / "speech.wav"
         notify("Reading clip audio", None)
         ff("-ss", pos, "-t", duration, "-i", d["path"], "-vn", "-ac", "1", "-ar", "16000", audio)
-        notify("Loading Whisper · first use downloads the model", None)
+        if os.getenv("NANOCUT_INSTALLED") == "1":
+            from faster_whisper.utils import download_model
+            try:
+                model = download_model(model, local_files_only=True)
+            except OSError:
+                raise ValueError(f"Select Whisper {model} in NanoCut 1.1 Setup and retry.") from None
+        notify("Loading Whisper", None)
         engine = WhisperModel(
             model,
+            local_files_only=os.getenv("NANOCUT_INSTALLED") == "1",
             device="cpu",
             compute_type="int8",
             cpu_threads=max(1, min(os.cpu_count() or 4, 8)),
@@ -245,13 +252,15 @@ def cutout(d, notify):
         from PIL import Image
         from rembg import new_session, remove
     except ImportError:
-        raise ValueError("Install local AI tools first. On Windows, run Install-AI.cmd.") from None
+        raise ValueError("Install local AI tools first. Select the AI components in NanoCut Setup.") from None
     src, dest = d["path"], Path(d["dest"])
     info = probe(src)
     fps = d["fps"]
     scale = min(1, 1280 / max(info["width"], info["height"]))
     w, h = (max(2, round(v * scale / 2) * 2) for v in (info["width"], info["height"]))
-    notify("Loading background model · first use downloads weights", None)
+    if os.getenv("NANOCUT_INSTALLED") == "1" and not (Path(os.environ["LOCALAPPDATA"]) / "NanoCutRuntime" / "foreground-ready").is_file():
+        raise ValueError("Select Local background removal in NanoCut 1.1 Setup and retry.")
+    notify("Loading background model", None)
     session = new_session("u2netp", providers=["CPUExecutionProvider"])
     with tempfile.TemporaryDirectory(dir=dest.parent) as tmp:
         tmp = Path(tmp)
@@ -320,8 +329,8 @@ def cutout(d, notify):
                 str(out),
             ]
             with (
-                subprocess.Popen(args, stdout=subprocess.PIPE) as reader,
-                subprocess.Popen(enc, stdin=subprocess.PIPE) as writer,
+                subprocess.Popen(args, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), stdout=subprocess.PIPE) as reader,
+                subprocess.Popen(enc, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), stdin=subprocess.PIPE) as writer,
             ):
                 count = 0
                 try:

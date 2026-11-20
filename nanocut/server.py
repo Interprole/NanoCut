@@ -42,7 +42,7 @@ def picker(mode, title, types, ext=None, name=None):
         [sys.executable, "-m", "nanocut.dialog"],
         input=json.dumps(config).encode(),
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), stderr=subprocess.PIPE,
         cwd=ROOT,
     )
     if p.returncode:
@@ -82,7 +82,7 @@ class Workspace:
             if proc.is_alive():
                 if os.name == "nt":
                     subprocess.run(
-                        ["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True
+                        ["taskkill", "/PID", str(proc.pid), "/T", "/F"], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), capture_output=True
                     )
                 else:
                     try:

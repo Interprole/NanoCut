@@ -53,7 +53,7 @@ STYLES = {
 
 def run(args, **kwargs):
     proc = subprocess.run(
-        [str(a) for a in args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs
+        [str(a) for a in args], stdout=subprocess.PIPE, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), stderr=subprocess.PIPE, **kwargs
     )
     if proc.returncode:
         raise ValueError(proc.stderr.decode(errors="replace")[-1800:] or "Media processing failed.")
@@ -294,7 +294,7 @@ def render(p, assets, dest, width, height, fps, notify=lambda *args: None):
         ]
         with (
             open(tmp / "errors", "w+b") as err,
-            subprocess.Popen(cmd, cwd=tmp, stdout=subprocess.PIPE, stderr=err, text=True) as proc,
+            subprocess.Popen(cmd, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), cwd=tmp, stdout=subprocess.PIPE, stderr=err, text=True) as proc,
         ):
             for line in proc.stdout:
                 if line.startswith("out_time_us="):

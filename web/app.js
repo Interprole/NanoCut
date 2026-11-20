@@ -863,7 +863,7 @@ function whisper(c) {
       formatTime(Math.max(2, duration * ratio * 1.6)) +
       " · " +
       (observed ? "based on your last run" : "rough CPU estimate") +
-      ". Initial model download and loading time are extra.";
+      ". Model loading time is extra. On Windows, add models in NanoCut Setup.";
   }
   controls.model.onchange = estimate;
   estimate();
@@ -954,7 +954,7 @@ function background(c) {
       changed("Background removed · original retained in media pool");
     },
     "Choose destination…",
-    "Create a transparent foreground from the selected source interval. Videos render locally at up to 1280 px on the long edge. First use downloads model weights.",
+    "Create a transparent foreground from the selected source interval. Videos render locally at up to 1280 px on the long edge. On Windows, select background removal in NanoCut Setup.",
   );
 }
 function tiktok() {

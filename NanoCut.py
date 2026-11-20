@@ -37,13 +37,23 @@ def main():
     ap.add_argument(
         "--serve", action="store_true", help="print the local editor URL and keep serving"
     )
+    ap.add_argument("--desktop-worker", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
     if not all(shutil.which(s) for s in ("ffmpeg", "ffprobe")):
-        sys.exit("FFmpeg and ffprobe are required. Run Setup.cmd or see README.md.")
+        sys.exit("FFmpeg and ffprobe are required. Run the NanoCut installer or see README.md.")
     server = Server()
-    print("NanoCut desktop window:", server.url, flush=True)
+    if args.desktop_worker:
+        if os.name == "nt":
+            multiprocessing.set_executable(str(Path(sys.executable).with_name("pythonw.exe")))
+        print(server.url, flush=True)
+        def watch_owner():
+            sys.stdin.buffer.read()
+            server.shutdown()
+        threading.Thread(target=watch_owner, daemon=True).start()
+    else:
+        print("NanoCut desktop window:", server.url, flush=True)
     process = None
-    if not args.serve:
+    if not args.serve and not args.desktop_worker:
         browser = browser_path()
         if browser:
             process = subprocess.Popen(

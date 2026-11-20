@@ -1,23 +1,35 @@
 Unicode true
-Name "NanoCut"
-OutFile "..\dist\NanoCut-Setup.exe"
+Name "NanoCut 1.1"
+OutFile "..\dist\NanoCut-1.1-Setup.exe"
 InstallDir "$LOCALAPPDATA\Programs\NanoCut"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
+ShowInstDetails show
+VIProductVersion "1.1.0.0"
+VIAddVersionKey "ProductName" "NanoCut"
+VIAddVersionKey "FileDescription" "NanoCut 1.1 Setup"
+VIAddVersionKey "FileVersion" "1.1.0.0"
+VIAddVersionKey "ProductVersion" "1.1"
+VIAddVersionKey "LegalCopyright" "NanoCut"
 !include "MUI2.nsh"
+!include "LogicLib.nsh"
+!include "FileFunc.nsh"
+!include "Sections.nsh"
+Var Models
+Var Background
+!define MUI_COMPONENTSPAGE_TEXT_TOP "Choose the local AI tools and speech models to prepare on this computer. Setup reuses compatible installed components."
+!insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
-!define MUI_FINISHPAGE_RUN
-!define MUI_FINISHPAGE_RUN_FUNCTION LaunchEditor
-!define MUI_FINISHPAGE_RUN_TEXT "Set up and open NanoCut"
+!define MUI_FINISHPAGE_RUN "$INSTDIR\NanoCut.exe"
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_LANGUAGE "English"
-Section
+
+Section "NanoCut editor and download tools" Core
+  SectionIn RO
   SetOutPath "$INSTDIR"
+  File /r "..\dist\host\*.*"
   File "..\NanoCut.py"
-  File "..\NanoCut.cmd"
-  File "..\Setup.cmd"
-  File "..\Install-AI.cmd"
   File "..\requirements*.txt"
   File "..\README.md"
   SetOutPath "$INSTDIR\nanocut"
@@ -29,37 +41,80 @@ Section
   File "..\web\*.svg"
   SetOutPath "$INSTDIR\packaging"
   File "setup.ps1"
-  SetOutPath "$INSTDIR"
-  CreateDirectory "$SMPROGRAMS\NanoCut"
-  CreateShortCut "$SMPROGRAMS\NanoCut\NanoCut.lnk" "$INSTDIR\NanoCut.cmd"
-  CreateShortCut "$SMPROGRAMS\NanoCut\Install local AI.lnk" "$INSTDIR\Install-AI.cmd"
-  WriteUninstaller "$INSTDIR\Uninstall.exe"
+  File "models.py"
 SectionEnd
-Function LaunchEditor
-  ExecShell "open" "$INSTDIR\NanoCut.cmd"
+
+Section "Local background removal" FG
+  StrCpy $Background "-Background"
+SectionEnd
+!macro Whisper VAR NAME OPTIONAL
+Section ${OPTIONAL} "Whisper ${NAME}" ${VAR}
+  StrCpy $Models "$Models${NAME},"
+SectionEnd
+!macroend
+!insertmacro Whisper Tiny tiny /o
+!insertmacro Whisper Base base ""
+!insertmacro Whisper Small small /o
+!insertmacro Whisper Medium medium /o
+!insertmacro Whisper Large large-v3 /o
+!insertmacro Whisper Turbo turbo /o
+
+Function .onInit
+  ${GetParameters} $0
+  ClearErrors
+  ${GetOptions} $0 "/COREONLY" $1
+  IfErrors done
+  !insertmacro UnselectSection ${Base}
+  !insertmacro UnselectSection ${FG}
+  done:
 FunctionEnd
-Section "Uninstall"
-  Delete "$SMPROGRAMS\NanoCut\NanoCut.lnk"
+
+Section "-Prepare and register"
+  SetOutPath "$INSTDIR"
+  StrCpy $2 ""
+  StrCmp $Models "" ready
+  StrCpy $2 '-Models "$Models"'
+  ready:
+  DetailPrint "Checking installed components and preparing selected features..."
+  nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\packaging\setup.ps1" $2 $Background'
+  Pop $0
+  StrCmp $0 "0" success
+  SetErrorLevel 1
+  DetailPrint "Setup could not finish. See the details above and rerun the installer."
+  Abort
+  success:
   Delete "$SMPROGRAMS\NanoCut\Install local AI.lnk"
-  RMDir "$SMPROGRAMS\NanoCut"
-  Delete "$INSTDIR\NanoCut.py"
-  Delete "$INSTDIR\NanoCut.cmd"
   Delete "$INSTDIR\Setup.cmd"
+  Delete "$INSTDIR\NanoCut.cmd"
   Delete "$INSTDIR\Install-AI.cmd"
-  Delete "$INSTDIR\requirements.txt"
-  Delete "$INSTDIR\requirements-ai.txt"
+  CreateDirectory "$SMPROGRAMS\NanoCut"
+  CreateShortcut "$SMPROGRAMS\NanoCut\NanoCut.lnk" "$INSTDIR\NanoCut.exe"
+  WriteUninstaller "$INSTDIR\Uninstall.exe"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NanoCut" "DisplayName" "NanoCut"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NanoCut" "DisplayVersion" "1.1"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NanoCut" "UninstallString" '"$INSTDIR\Uninstall.exe"'
+SectionEnd
+
+Section "Uninstall"
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NanoCut"
+  Delete "$SMPROGRAMS\NanoCut\NanoCut.lnk"
+  RMDir "$SMPROGRAMS\NanoCut"
+  Delete "$INSTDIR\NanoCut.exe*"
+  Delete "$INSTDIR\Microsoft.Web.WebView2.*"
+  Delete "$INSTDIR\WebView2Loader.dll"
+  Delete "$INSTDIR\NanoCut.py"
+  Delete "$INSTDIR\requirements*.txt"
   Delete "$INSTDIR\README.md"
   Delete "$INSTDIR\packaging\setup.ps1"
+  Delete "$INSTDIR\packaging\models.py"
   RMDir "$INSTDIR\packaging"
   Delete "$INSTDIR\nanocut\*.py"
   RMDir "$INSTDIR\nanocut"
+  Delete "$INSTDIR\web\*.js"
   Delete "$INSTDIR\web\index.html"
-  Delete "$INSTDIR\web\app.js"
-  Delete "$INSTDIR\web\timeline.js"
   Delete "$INSTDIR\web\style.css"
   Delete "$INSTDIR\web\icon.svg"
   RMDir "$INSTDIR\web"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
 SectionEnd
-

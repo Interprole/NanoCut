@@ -2,15 +2,13 @@
 
 An English-language desktop video editor for assembling short videos. Cut on exact frames, arrange footage on two visual tracks, mix audio, and generate captions locally.
 
-**[Download the Windows x64 installer](https://github.com/Interprole/NanoCut/raw/refs/heads/main/downloads/NanoCut-Setup.exe)**
+**[Download NanoCut 1.1 for Windows x64](https://github.com/Interprole/NanoCut/releases/download/v1.1/NanoCut-1.1-Setup.exe)**
 
 ## Start on Windows
 
-1. Run **NanoCut-Setup.exe** and leave **Set up and open NanoCut** selected. First launch needs internet access to install Python, FFmpeg, Node.js and yt-dlp. Setup runs under your Windows account. You can also extract the source ZIP and double-click **NanoCut.cmd**.
-2. Select **Import media** or **Try the example project**. The example includes two original motion clips and an audio track.
-3. For transcription and background removal, open **Install local AI** in the NanoCut Start menu folder, or run **Install-AI.cmd**. Model weights download on first use. Cached models process your footage on your computer. The CPU backend works on systems with AMD integrated graphics.
-
-On subsequent launches use the **NanoCut** Start menu shortcut. The editor opens in a dedicated Edge or Chrome window. A local Python process handles media, file dialogs and rendering. An installed default browser can open the editor when a supported app-window browser is unavailable.
+1. Run **NanoCut-1.1-Setup.exe**. The graphical installer checks existing components, shows progress, and downloads missing dependencies. Choose the Whisper models and background removal on the components page. Base Whisper and background removal are selected by default.
+2. Open **NanoCut** from Start. The Windows application uses a C# Windows Forms window with embedded WebView2 and a local Python media engine. Choose **Try the example project** to explore the timeline.
+3. To add models later, rerun the same installer and select them. Existing projects use the same file format as 1.0.
 
 ## Edit a sequence
 
@@ -38,7 +36,7 @@ Choose **Studio**, **Headline**, **Cinema**, **Boxed** or **Signal**. **Edit cap
 
 ## Downloads, conversion and export
 
-**↓** beside **Import media** opens the yt-dlp downloader. Paste a YouTube or TikTok video URL, enter start and end times in seconds or HH:MM:SS, and choose MP4 or MP3. The file picker selects the destination folder and filename. The placement selector sends the result to the pool, sequence end, playhead, overlay track or preview-only audio track. **Full source transfer** downloads the entire media file and trims locally when a source cannot serve a partial download. Availability also depends on the source site's access restrictions. Rerun setup to update the downloader.
+**↓** beside **Import media** opens the yt-dlp downloader. Paste a YouTube or TikTok video URL, enter start and end times in seconds or HH:MM:SS, and choose MP4 or MP3. The file picker selects the destination folder and filename. The placement selector sends the result to the pool, sequence end, playhead, overlay track or preview-only audio track. **Full source transfer** downloads the entire media file and trims locally when a source cannot serve a partial download. Availability also depends on the source site's access restrictions. Setup reuses compatible downloader packages.
 
 To convert a single file, start an empty project, import the file and choose **Export**. The same dialog renders a complete edit. Video formats include MP4, MOV, MKV and WebM. Audio formats include MP3, WAV, M4A and FLAC. Choose a landscape, square, portrait or 4:5 project canvas and set the timeline frame rate in **Project settings**. Export resolution and frame rate can be set independently. An export with a different aspect ratio fits the composition inside the new canvas.
 
@@ -72,7 +70,7 @@ python tests/smoke_ui.py
 
 The regression tests render media and inspect frame colors, audio samples, duration, captions and project round trips. The UI smoke test drives editing and export, substituting temporary destinations for native file pickers. Set `NANOCUT_TEST_BROWSER` to test with an existing Chromium executable.
 
-To rebuild the Windows bootstrap installer, install NSIS 3, create the `dist` directory and run `makensis packaging/installer.nsi` from the repository root. The installer contains NanoCut and the setup scripts. Runtime dependencies download directly from their distributors at first launch.
+The Windows workflow builds the native host and installer, verifies editing and installed startup, and publishes the versioned installer to GitHub Releases. See `.github/workflows/windows.yml` for the Windows build commands.
 
 The private Windows runtime lives in `%LOCALAPPDATA%\NanoCutRuntime`. Cache, browser profile and recovery data live under `~/.nanocut`. Speech and segmentation weights use their respective upstream model caches. Removing the application preserves projects, source footage and the downloaded runtime.
 
