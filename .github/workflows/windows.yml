@@ -41,8 +41,8 @@ jobs:
           $installer = Start-Process ".\downloads\NanoCut-Setup.exe" -ArgumentList "/S" -PassThru -Wait
           if ($installer.ExitCode -ne 0) { throw "The installer failed." }
           $installed = "$env:LOCALAPPDATA\Programs\NanoCut"
-          foreach ($file in @("NanoCut.py", "web\app.js", "packaging\setup.ps1")) {
-            if ((Get-FileHash "$installed\$file").Hash -ne (Get-FileHash $file).Hash) {
+          foreach ($file in @("NanoCut.py", "web/app.js", "packaging/setup.ps1")) {
+            if ((git hash-object --no-filters "$installed/$file") -ne (git rev-parse "HEAD:$file")) {
               throw "The installer contains an outdated copy of $file."
             }
           }
