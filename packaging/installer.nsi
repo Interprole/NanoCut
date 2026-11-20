@@ -76,7 +76,7 @@ Section "-Prepare and register"
   StrCpy $2 '-Models "$Models"'
   ready:
   DetailPrint "Checking installed components and preparing selected features..."
-  nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\packaging\setup.ps1" $2 $Background'
+  nsExec::ExecToLog '"$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\packaging\setup.ps1" $2 $Background'
   Pop $0
   StrCmp $0 "0" success
   SetErrorLevel 1

@@ -45,6 +45,18 @@ jobs:
           (Split-Path $config.python) >> $env:GITHUB_PATH
           $config.paths | ForEach-Object { $_ >> $env:GITHUB_PATH }
           if ((Get-Item "$app\NanoCut.exe").VersionInfo.ProductVersion -notlike '1.1*') { throw "Incorrect desktop version." }
+      - name: Prepare default AI features inside the installer
+        shell: pwsh
+        run: |
+          $p = Start-Process (Resolve-Path dist/NanoCut-1.1-Setup.exe) -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode) {
+            Get-Content "$env:LOCALAPPDATA\NanoCutRuntime\setup.log" -Tail 60
+            throw "AI component installation failed."
+          }
+          $env:HF_HUB_OFFLINE = "1"
+          python -c "from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8', local_files_only=True)"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -c "from rembg import new_session; new_session('u2netp', providers=['CPUExecutionProvider'])"
       - name: Test exports and edit a project
         shell: pwsh
         run: |

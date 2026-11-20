@@ -1,5 +1,6 @@
 param([string]$Models = "", [switch]$Background)
 $ErrorActionPreference = "Stop"
+$env:PSModulePath = "$PSHOME\Modules;$env:PSModulePath"
 $ProgressPreference = "SilentlyContinue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $root = Join-Path $env:LOCALAPPDATA NanoCutRuntime
@@ -13,7 +14,11 @@ Start-Transcript -Path (Join-Path $root "setup.log") -Force | Out-Null
 function Download($url, $name, $sha) {
     $file = Join-Path $tempDir $name
     Invoke-WebRequest -UseBasicParsing $url -OutFile $file
-    if ((Get-FileHash $file).Hash -ne $sha) { throw "Checksum failed for $name." }
+    $stream = [IO.File]::OpenRead($file)
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try { $actual = [BitConverter]::ToString($algorithm.ComputeHash($stream)).Replace('-', '') }
+    finally { $stream.Dispose(); $algorithm.Dispose() }
+    if ($actual -ne $sha) { throw "Checksum failed for $name." }
     return $file
 }
 function Find-Tool($name, $minimum, $versionArg) {
@@ -73,7 +78,8 @@ try {
     if (!$ffmpeg -or !$ffprobe) {
         Write-Host "Downloading missing FFmpeg tools..."
         $zip = Download 'https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip' ffmpeg.zip '60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba'
-        Expand-Archive $zip $tempDir
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [IO.Compression.ZipFile]::ExtractToDirectory($zip, $tempDir)
         $bin = Join-Path $tempDir 'ffmpeg-9.0.2-essentials_build\bin'
         if (!$ffmpeg) { $ffmpeg = Join-Path $tools ffmpeg.exe; Copy-Item "$bin\ffmpeg.exe" $ffmpeg -Force }
         if (!$ffprobe) { $ffprobe = Join-Path $tools ffprobe.exe; Copy-Item "$bin\ffprobe.exe" $ffprobe -Force }
