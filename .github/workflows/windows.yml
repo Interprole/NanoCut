@@ -35,3 +35,32 @@ jobs:
           python -m pip install playwright
           $env:NANOCUT_TEST_BROWSER = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
           python tests/smoke_ui.py
+      - name: Launch the installed Start menu shortcut
+        shell: pwsh
+        run: |
+          $installer = Start-Process ".\downloads\NanoCut-Setup.exe" -ArgumentList "/S" -PassThru -Wait
+          if ($installer.ExitCode -ne 0) { throw "The installer failed." }
+          $installed = "$env:LOCALAPPDATA\Programs\NanoCut"
+          foreach ($file in @("NanoCut.py", "web\app.js", "packaging\setup.ps1")) {
+            if ((Get-FileHash "$installed\$file").Hash -ne (Get-FileHash $file).Hash) {
+              throw "The installer contains an outdated copy of $file."
+            }
+          }
+          $shortcut = Join-Path ([Environment]::GetFolderPath("Programs")) "NanoCut\NanoCut.lnk"
+          Start-Process $shortcut
+          $deadline = [DateTime]::UtcNow.AddSeconds(40)
+          $localUrl = $null
+          do {
+            Start-Sleep -Milliseconds 500
+            $processes = Get-CimInstance Win32_Process -Filter "Name='msedge.exe' OR Name='chrome.exe'"
+            foreach ($process in $processes) {
+              if ($process.CommandLine -match '--app=(http://127\.0\.0\.1:\d+/[A-Za-z0-9_-]+/)') {
+                $localUrl = $Matches[1]
+                break
+              }
+            }
+          } until ($localUrl -or [DateTime]::UtcNow -gt $deadline)
+          if (-not $localUrl) { throw "The installed desktop window did not start." }
+          $response = Invoke-WebRequest -Uri $localUrl
+          if ($response.Content -notmatch '<title>NanoCut</title>') { throw "The desktop window did not load the editor." }
+          Write-Host "The installed editor opened from its Start menu shortcut."
