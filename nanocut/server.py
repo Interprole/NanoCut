@@ -1,3 +1,5 @@
+import base64
+import shutil
 import json
 import mimetypes
 import multiprocessing as mp
@@ -20,7 +22,7 @@ from .tasks import MODELS, prepare, worker
 ROOT = Path(__file__).resolve().parent.parent
 HOME = Path(os.environ.get("NANOCUT_HOME", Path.home() / ".nanocut"))
 MEDIA = "*.mp4 *.mov *.mkv *.webm *.avi *.m4v *.mpg *.mpeg *.mts *.m2ts *.mp3 *.wav *.m4a *.aac *.ogg *.flac *.jpg *.jpeg *.png *.webp *.bmp"
-STATIC = {"index.html", "style.css", "app.js", "timeline.js", "icon.svg"}
+STATIC = {"index.html", "style.css", "app.js", "timeline.js", "studio.js", "icon.svg"}
 
 
 def atomic_json(path, data):
@@ -53,12 +55,13 @@ def picker(mode, title, types, ext=None, name=None):
 
 
 def public(asset):
-    return {k: v for k, v in asset.items() if k not in {"path", "thumb", "preview"}}
+    return {k: v for k, v in asset.items() if k not in {"path", "thumb", "preview", "wave"}}
 
 
 class Workspace:
     def __init__(self):
         HOME.mkdir(parents=True, exist_ok=True)
+        self.staging = HOME / "Projects" / secrets.token_hex(8)
         self.assets = {}
         self.project_path = None
         self.job = None
@@ -108,7 +111,7 @@ class Workspace:
                 if kind == "progress":
                     j["label"], j["fraction"] = data
                 else:
-                    if kind == "done" and j["kind"] in {"import", "cutout", "download"}:
+                    if kind == "done" and j["kind"] in {"import", "cutout", "download", "narrate"}:
                         values = data if isinstance(data, list) else [data]
                         self.assets.update({a["id"]: a for a in values})
                         data = [public(a) for a in values]
@@ -158,7 +161,43 @@ class Workspace:
             raise ValueError("Choose a new filename to preserve your source media.")
         return p
 
+    def media_dir(self):
+        if self.project_path:
+            path = Path(self.project_path)
+            return path.with_name(path.stem + ".media")
+        return self.staging
+
+    def generated(self, name, ext):
+        folder = self.media_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        return str(folder / (name + "-" + secrets.token_hex(4) + "." + ext))
+
     def call(self, op, d):
+        if op == "install":
+            return self.begin(op, {"component": d["component"]})
+        if op in {"narrate", "translate"}:
+            if not d["cues"] or d.get("provider") not in ({"local", "openai", "piper"} if op == "narrate" else {"local", "openai"}):
+                raise ValueError("Select timed captions and a provider.")
+            if op == "narrate":
+                d["dest"] = self.generated("Narration", "wav")
+            return self.begin(op, d)
+        if op == "update":
+            from .tools import latest
+            return latest()
+        if op == "graphic":
+            data = base64.b64decode(d["png"], validate=True)
+            if not data.startswith(b"\x89PNG\r\n\x1a\n") or len(data) > 8000000:
+                raise ValueError("Invalid graphic.")
+            dest = self.generated("Graphic", "png")
+            Path(dest).write_bytes(data)
+            return self.begin("import", {"paths": [dest]})
+        if op == "sound":
+            from .media import ff
+            sounds = {"Beep": "sine=f=880:d=0.18", "Bass hit":"sine=f=90:d=0.4",
+                      "Noise sweep":"anoisesrc=color=pink:duration=0.5:amplitude=0.3"}
+            dest = self.generated("Sound", "wav")
+            ff("-f", "lavfi", "-i", sounds[d["sound"]], "-af", "afade=t=out:st=0.05:d=0.32", dest)
+            return self.begin("import", {"paths": [dest]})
         if op == "demo":
             from .demo import example
 
@@ -179,6 +218,7 @@ class Workspace:
         if op == "cancel":
             return self.cancel()
         if op == "new":
+            self.staging = HOME / "Projects" / secrets.token_hex(8)
             self.project_path = None
             return True
         if op == "import":
@@ -209,6 +249,20 @@ class Workspace:
                 )
             if not path:
                 return None
+            if op == "save" and path != self.project_path:
+                target = Path(path).with_name(Path(path).stem + ".media")
+                for ident in d["project"]["library"]:
+                    asset = self.assets[ident]
+                    src = Path(asset["path"])
+                    if src.parent == self.media_dir() and target != src.parent:
+                        target.mkdir(parents=True, exist_ok=True)
+                        dest = target / src.name
+                        if dest.exists():
+                            dest = target / (secrets.token_hex(4) + "-" + src.name)
+                        shutil.copy2(src, dest)
+                        asset["path"] = str(dest)
+                        if asset["preview"] == str(src):
+                            asset["preview"] = str(dest)
             atomic_json(path, self.pack(d["project"], Path(path).parent))
             if op == "save":
                 self.project_path = path
@@ -230,7 +284,7 @@ class Workspace:
             fmt = d["format"]
             if fmt not in {"mp3", "mp4"}:
                 raise ValueError("Invalid download format.")
-            dest = self.dest(fmt, "Download." + fmt)
+            dest = self.generated("Download", fmt)
             return self.begin(op, dict(d, dest=dest)) if dest else None
         if op in {"whisper", "cutout"}:
             a = self.assets[d["asset"]]
@@ -240,7 +294,7 @@ class Workspace:
                 raise ValueError("Select a visual clip.")
             if op == "cutout":
                 ext = "png" if a["still"] else "webm"
-                dest = self.dest(ext, Path(a["name"]).stem + "-cutout." + ext)
+                dest = self.generated("Foreground", ext)
                 if not dest:
                     return None
                 d["dest"] = dest
@@ -300,7 +354,8 @@ class Handler(BaseHTTPRequestHandler):
             if not 0 <= size <= 24 * 1024 * 1024:
                 raise ValueError("Project data is too large.")
             data = json.loads(self.rfile.read(size))
-            with self.server.workspace.lock:
+            from contextlib import nullcontext
+            with (nullcontext() if route == "api/update" else self.server.workspace.lock):
                 value = self.server.workspace.call(route[4:], data)
             self.reply({"value": value})
         except Exception as exc:
@@ -313,12 +368,12 @@ class Handler(BaseHTTPRequestHandler):
         route = route or "index.html"
         if route in STATIC:
             path = ROOT / "web" / route
-        elif re.fullmatch(r"(media|thumb)/[a-zA-Z0-9_-]+", route):
+        elif re.fullmatch(r"(media|thumb|wave)/[a-zA-Z0-9_-]+", route):
             kind, ident = route.split("/")
             a = self.server.workspace.assets.get(ident)
             if not a:
                 return self.send_error(404)
-            path = Path(a["preview" if kind == "media" else "thumb"])
+            path = Path(a["preview" if kind == "media" else kind] or "")
         else:
             return self.send_error(404)
         try:
@@ -339,7 +394,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header(
                     "Content-Security-Policy",
-                    "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+                    "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src https://www.youtube-nocookie.com https://www.tiktok.com; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
                 )
                 self.send_header(
                     "Content-Type", mimetypes.guess_type(str(path))[0] or "application/octet-stream"

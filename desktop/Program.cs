@@ -24,7 +24,7 @@ namespace NanoCut {
         private readonly string dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NanoCutRuntime");
 
         public Editor() {
-            Text = "NanoCut 1.1";
+            Text = "NanoCut 1.1.0.1";
             ClientSize = new Size(1360, 850);
             StartPosition = FormStartPosition.CenterScreen;
             Controls.Add(view);
@@ -32,7 +32,7 @@ namespace NanoCut {
                 try { await StartEditor(); }
                 catch (Exception ex) {
                     if (IsDisposed) return;
-                    MessageBox.Show(this, ex.Message + "\n\nRun NanoCut 1.1 Setup to repair the installation.", Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(this, ex.Message + "\n\nRun NanoCut 1.1.0.1 Setup to repair the installation.", Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     allowClose = true;
                     Close();
                 }
@@ -82,12 +82,12 @@ namespace NanoCut {
             };
             view.CoreWebView2.NewWindowRequested += (_, e) => {
                 e.Handled = true;
-                if (e.Uri.StartsWith("https://www.tiktok.com/", StringComparison.OrdinalIgnoreCase))
+                if (e.Uri.StartsWith("https://www.tiktok.com/", StringComparison.OrdinalIgnoreCase) || e.Uri == "https://github.com/Interprole/NanoCut/releases/latest")
                     Process.Start(new ProcessStartInfo(e.Uri) { UseShellExecute = true });
             };
             view.CoreWebView2.NavigationCompleted += (_, e) => {
                 ready = e.IsSuccess;
-                if (ready) Text = "NanoCut 1.1 — Editor";
+                if (ready) Text = "NanoCut 1.1.0.1 — Editor";
             };
             view.Source = url;
         }

@@ -131,7 +131,7 @@ try {
     $config = Join-Path $root 'runtime-1.1.json'
     @{python=$python; paths=$paths} | ConvertTo-Json | Out-File "$config.new" -Encoding utf8
     Move-Item "$config.new" $config -Force
-    Write-Host "NanoCut 1.1 is ready."
+    Write-Host "NanoCut 1.1.0.1 is ready."
 } finally {
     Stop-Transcript | Out-Null
     Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue

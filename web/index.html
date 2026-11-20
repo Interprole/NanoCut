@@ -3,19 +3,20 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>NanoCut 1.1</title>
+    <title>NanoCut 1.1.0.1</title>
     <link rel="icon" href="icon.svg" />
     <link rel="stylesheet" href="style.css" />
     <script defer src="timeline.js"></script>
+    <script defer src="studio.js"></script>
     <script defer src="app.js"></script>
   </head>
   <body>
     <header>
-      <div class="brand"><img src="icon.svg" alt="" /><b>NanoCut</b><small class="meta">1.1</small></div>
+      <div class="brand"><img src="icon.svg" alt="" /><b>NanoCut</b><small class="meta">1.1.0.1</small></div>
       <div class="menu-wrap">
         <button id="project-menu" aria-label="Project menu">File ▾</button>
         <div id="file-menu" class="popup" hidden>
-          <button data-action="new">New project <kbd>Ctrl N</kbd></button
+          <button data-action="releases">GitHub releases</button><button data-action="tools">Models and tools…</button><button data-action="updates">Check for updates</button><button data-action="new">New project <kbd>Ctrl N</kbd></button
           ><button data-action="open">Open project… <kbd>Ctrl O</kbd></button
           ><button data-action="save">Save project <kbd>Ctrl S</kbd></button
           ><button data-action="save-as">Save as…</button
@@ -31,7 +32,7 @@
         maxlength="100"
       /><span id="save-state" class="muted small"></span>
       <div class="grow"></div>
-      <button id="project-settings" title="Project canvas and frame rate">
+      <button id="release-link" hidden>Update available</button><button id="project-settings" title="Project canvas and frame rate">
         Project settings</button
       ><button id="export" class="primary">
         Export <span aria-hidden="true">↗</span>
@@ -108,18 +109,8 @@
               ›
             </button>
           </div>
-          <select
-            id="play-rate"
-            aria-label="Preview speed"
-            title="Preview speed"
-          >
-            <option value=".25">0.25×</option>
-            <option value=".5">0.5×</option>
-            <option selected value="1">1×</option>
-            <option value="1.5">1.5×</option>
-            <option value="2">2×</option>
-            <option value="4">4×</option>
-          </select>
+          <label class="rate-box"><input id="play-rate" aria-label="Preview speed" type="number" min="0.0001" max="10000" step="any" value="1">×</label>
+
         </div>
       </section>
       <aside class="inspector panel">
@@ -133,6 +124,9 @@
     <section class="timeline panel">
       <div class="timeline-head">
         <h2>Timeline</h2>
+        <button id="add-element">＋ Add…</button>
+        <button id="edit-selection">Selection…</button>
+        <button id="loop-range" title="Loop the range marked by Shift-dragging on a track" aria-pressed="false">Loop</button>
         <div class="toolgroup">
           <button id="undo" title="Undo (Ctrl Z)">↶</button
           ><button id="redo" title="Redo (Ctrl Shift Z)">↷</button>

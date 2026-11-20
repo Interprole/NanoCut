@@ -23,6 +23,7 @@ def prepare(path, notify=lambda *args: None):
     ).hexdigest()[:24]
     CACHE.mkdir(parents=True, exist_ok=True)
     thumb = CACHE / (key + ".jpg")
+    waveform = CACHE / (key + "-wave.png")
     preview = path
     ext = path.suffix.lower()
     direct = (
@@ -37,6 +38,10 @@ def prepare(path, notify=lambda *args: None):
     )
     with tempfile.TemporaryDirectory(dir=CACHE) as tmp:
         tmp = Path(tmp)
+        if info["audio"] and not waveform.exists():
+            ff("-i", path, "-filter_complex", "[0:a:0]aresample=8000,aformat=channel_layouts=mono,showwavespic=s=2048x54:colors=0x8ae9cd",
+               "-frames:v", "1", tmp / "wave.png")
+            os.replace(tmp / "wave.png", waveform)
         if not direct:
             notify("Preparing a playback copy", None)
             ext = (
@@ -109,7 +114,7 @@ def prepare(path, notify=lambda *args: None):
                     tmp / "thumb.jpg",
                 )
             os.replace(tmp / "thumb.jpg", thumb)
-    return dict(info, id=key, path=str(path), preview=str(preview), thumb=str(thumb))
+    return dict(info, id=key, path=str(path), preview=str(preview), thumb=str(thumb), wave=str(waveform) if info["audio"] else None)
 
 
 def download(d, notify):
@@ -146,6 +151,11 @@ def download(d, notify):
             js_runtimes={"node": {}, "deno": {}},
             compat_opts={"no-certifi"},
         )
+        browser = d.get("browser", "")
+        if browser:
+            if browser not in {"firefox", "chrome", "edge", "brave", "opera", "vivaldi"}:
+                raise ValueError("Choose a supported browser.")
+            opts["cookiesfrombrowser"] = (browser,)
         local_trim = d.get("transfer") == "full" and (a or b != float("inf"))
         if not local_trim and (a or b != float("inf")):
             opts.update(
@@ -155,12 +165,14 @@ def download(d, notify):
             try:
                 dl.download([parsed.geturl()])
             except yt_dlp.utils.DownloadError as exc:
-                extra = (
-                    " Try Full source transfer if the server does not support excerpt requests."
-                    if not local_trim
-                    else ""
-                )
-                raise ValueError(str(exc) + extra) from exc
+                reason = str(exc)
+                if "cookie" in reason.lower() or "confirm" in reason.lower() or "sign in" in reason.lower():
+                    hint = " Choose the browser where you signed in. If its profile is locked or protected, try a signed-in Firefox profile."
+                elif host.endswith("tiktok.com"):
+                    hint = " Try the original video URL, your signed-in browser, or update yt-dlp in File → Models and tools."
+                else:
+                    hint = " Check the link and update yt-dlp in File → Models and tools."
+                raise ValueError(reason + hint) from exc
         source = next(
             (f for f in Path(tmp).glob("source.*") if f.suffix not in {".part", ".ytdl"}), None
         )
@@ -217,7 +229,7 @@ def transcribe(d, notify):
             try:
                 model = download_model(model, local_files_only=True)
             except OSError:
-                raise ValueError(f"Select Whisper {model} in NanoCut 1.1 Setup and retry.") from None
+                raise ValueError(f"Select Whisper {model} in NanoCut 1.1.0.1 Setup and retry.") from None
         notify("Loading Whisper", None)
         engine = WhisperModel(
             model,
@@ -233,10 +245,12 @@ def transcribe(d, notify):
                 / 32768
             )
         segments, _ = engine.transcribe(
-            samples, language=d.get("language") or None, beam_size=3, vad_filter=True
+            samples, language=d.get("language") or None, beam_size=3, vad_filter=True, word_timestamps=bool(d.get("script"))
         )
+        words = []
         cues = []
         for s in segments:
+            words.extend((w.word, pos+w.start, pos+w.end) for w in (getattr(s, "words", None) or []))
             if s.text.strip():
                 cues.append(
                     {"in": pos + s.start, "out": pos + min(duration, s.end), "text": s.text.strip()}
@@ -244,6 +258,9 @@ def transcribe(d, notify):
             elapsed = time.monotonic() - start
             remain = round(elapsed * max(0, duration - s.end) / max(0.01, s.end))
             notify(f"Recognizing speech · about {remain}s left", min(0.99, s.end / duration))
+        if d.get("script"):
+            from .speech import align_script
+            cues = align_script(d["script"], words)
         return {"cues": cues, "ratio": (time.monotonic() - start) / max(0.01, duration)}
 
 
@@ -259,7 +276,7 @@ def cutout(d, notify):
     scale = min(1, 1280 / max(info["width"], info["height"]))
     w, h = (max(2, round(v * scale / 2) * 2) for v in (info["width"], info["height"]))
     if os.getenv("NANOCUT_INSTALLED") == "1" and not (Path(os.environ["LOCALAPPDATA"]) / "NanoCutRuntime" / "foreground-ready").is_file():
-        raise ValueError("Select Local background removal in NanoCut 1.1 Setup and retry.")
+        raise ValueError("Select Local background removal in NanoCut 1.1.0.1 Setup and retry.")
     notify("Loading background model", None)
     session = new_session("u2netp", providers=["CPUExecutionProvider"])
     with tempfile.TemporaryDirectory(dir=dest.parent) as tmp:
@@ -370,6 +387,15 @@ def worker(kind, d, queue):
             result = transcribe(d, notify)
         elif kind == "cutout":
             result = cutout(d, notify)
+        elif kind == "install":
+            from .tools import install
+            result = install(d["component"], notify)
+        elif kind == "translate":
+            from .speech import translate
+            result = translate(d, notify)
+        elif kind == "narrate":
+            from .speech import narrate
+            result = narrate(d, notify)
         elif kind == "tiktok":
             from .tiktok import send_draft
 

@@ -27,7 +27,7 @@ jobs:
       - name: Install twice and verify dependency reuse
         shell: pwsh
         run: |
-          $setup = Resolve-Path dist/NanoCut-1.1-Setup.exe
+          $setup = Resolve-Path dist/NanoCut-1.1.0.1-Setup.exe
           $app = "$env:LOCALAPPDATA\Programs\NanoCut"
           $cfg = "$env:LOCALAPPDATA\NanoCutRuntime\runtime-1.1.json"
           for ($i=0; $i -lt 2; $i++) {
@@ -44,11 +44,11 @@ jobs:
           }
           (Split-Path $config.python) >> $env:GITHUB_PATH
           $config.paths | ForEach-Object { $_ >> $env:GITHUB_PATH }
-          if ((Get-Item "$app\NanoCut.exe").VersionInfo.ProductVersion -notlike '1.1*') { throw "Incorrect desktop version." }
-      - name: Prepare default AI features inside the installer
+          if ((Get-Item "$app\NanoCut.exe").VersionInfo.ProductVersion -notlike '1.1.0.1*') { throw "Incorrect desktop version." }
+      - name: Prepare base Whisper and foreground components
         shell: pwsh
         run: |
-          $p = Start-Process (Resolve-Path dist/NanoCut-1.1-Setup.exe) -ArgumentList '/S' -Wait -PassThru
+          $p = Start-Process (Resolve-Path dist/NanoCut-1.1.0.1-Setup.exe) -ArgumentList '/S /BASEAI' -Wait -PassThru
           if ($p.ExitCode) {
             Get-Content "$env:LOCALAPPDATA\NanoCutRuntime\setup.log" -Tail 60
             throw "AI component installation failed."
@@ -73,14 +73,14 @@ jobs:
           $deadline = [DateTime]::UtcNow.AddSeconds(45)
           do {
             Start-Sleep -Milliseconds 400
-            $editor = Get-Process NanoCut -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like 'NanoCut 1.1*Editor' }
+            $editor = Get-Process NanoCut -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like 'NanoCut 1.1.0.1*Editor' }
           } until ($editor -or [DateTime]::UtcNow -gt $deadline)
           if (!$editor) { throw "The installed WebView2 editor did not finish loading." }
           $editor.CloseMainWindow()
       - uses: actions/upload-artifact@v4
         with:
-          name: NanoCut-1.1-Windows
-          path: dist/NanoCut-1.1-Setup.exe
+          name: NanoCut-1.1.0.1-Windows
+          path: dist/NanoCut-1.1.0.1-Setup.exe
   release:
     needs: verify
     runs-on: ubuntu-latest
@@ -90,17 +90,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: NanoCut-1.1-Windows
+          name: NanoCut-1.1.0.1-Windows
           path: dist
-      - name: Publish version 1.1
+      - name: Publish version 1.1.0.1
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v1.1 >/dev/null 2>&1; then exit 0; fi
-          gh release create v1.1 dist/NanoCut-1.1-Setup.exe --target "$GITHUB_SHA" --title 'NanoCut 1.1' --notes 'Native Windows desktop window. Graphical setup installs selected components and speech models, reuses compatible dependencies, and supports upgrades from 1.0.'
-          cp dist/NanoCut-1.1-Setup.exe downloads/NanoCut-Setup.exe
+          if gh release view v1.1.0.1 >/dev/null 2>&1; then exit 0; fi
+          gh release create v1.1.0.1 dist/NanoCut-1.1.0.1-Setup.exe --target "$GITHUB_SHA" --title 'NanoCut 1.1.0.1' --notes 'Linked multitrack editing, frame ranges, script alignment, local and API dubbing, translation, project media folders and in-app model management.'
+          cp dist/NanoCut-1.1.0.1-Setup.exe downloads/NanoCut-Setup.exe
           git config user.name github-actions
           git config user.email github-actions@users.noreply.github.com
           git add downloads/NanoCut-Setup.exe
-          git commit -m 'Distribute verified version 1.1 through the existing download link'
+          git commit -m 'Distribute verified version 1.1.0.1 through the existing download link'
           git push origin HEAD:main

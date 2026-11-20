@@ -1,15 +1,15 @@
 Unicode true
-Name "NanoCut 1.1"
-OutFile "..\dist\NanoCut-1.1-Setup.exe"
+Name "NanoCut 1.1.0.1"
+OutFile "..\dist\NanoCut-1.1.0.1-Setup.exe"
 InstallDir "$LOCALAPPDATA\Programs\NanoCut"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 ShowInstDetails show
-VIProductVersion "1.1.0.0"
+VIProductVersion "1.1.0.1"
 VIAddVersionKey "ProductName" "NanoCut"
-VIAddVersionKey "FileDescription" "NanoCut 1.1 Setup"
-VIAddVersionKey "FileVersion" "1.1.0.0"
-VIAddVersionKey "ProductVersion" "1.1"
+VIAddVersionKey "FileDescription" "NanoCut 1.1.0.1 Setup"
+VIAddVersionKey "FileVersion" "1.1.0.1"
+VIAddVersionKey "ProductVersion" "1.1.0.1"
 VIAddVersionKey "LegalCopyright" "NanoCut"
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
@@ -52,20 +52,33 @@ Section ${OPTIONAL} "Whisper ${NAME}" ${VAR}
   StrCpy $Models "$Models${NAME},"
 SectionEnd
 !macroend
-!insertmacro Whisper Tiny tiny /o
+SectionGroup "Whisper speech models (all selected)" SpeechModels
+!insertmacro Whisper Tiny tiny ""
 !insertmacro Whisper Base base ""
-!insertmacro Whisper Small small /o
-!insertmacro Whisper Medium medium /o
-!insertmacro Whisper Large large-v3 /o
-!insertmacro Whisper Turbo turbo /o
+!insertmacro Whisper Small small ""
+!insertmacro Whisper Medium medium ""
+!insertmacro Whisper Large large-v3 ""
+!insertmacro Whisper Turbo turbo ""
+SectionGroupEnd
 
 Function .onInit
   ${GetParameters} $0
   ClearErrors
   ${GetOptions} $0 "/COREONLY" $1
-  IfErrors done
+  IfErrors checkBase
   !insertmacro UnselectSection ${Base}
   !insertmacro UnselectSection ${FG}
+  Goto smaller
+  checkBase:
+  ClearErrors
+  ${GetOptions} $0 "/BASEAI" $1
+  IfErrors done
+  smaller:
+  !insertmacro UnselectSection ${Tiny}
+  !insertmacro UnselectSection ${Small}
+  !insertmacro UnselectSection ${Medium}
+  !insertmacro UnselectSection ${Large}
+  !insertmacro UnselectSection ${Turbo}
   done:
 FunctionEnd
 
@@ -91,7 +104,7 @@ Section "-Prepare and register"
   CreateShortcut "$SMPROGRAMS\NanoCut\NanoCut.lnk" "$INSTDIR\NanoCut.exe"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NanoCut" "DisplayName" "NanoCut"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NanoCut" "DisplayVersion" "1.1"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NanoCut" "DisplayVersion" "1.1.0.1"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NanoCut" "UninstallString" '"$INSTDIR\Uninstall.exe"'
 SectionEnd
 

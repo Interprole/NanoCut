@@ -191,6 +191,23 @@ class EditTests(unittest.TestCase):
         plain = self.pixels(p, "plain.mp4", 320, 240)
         self.assertNotEqual(annotated, plain)
 
+    def test_caption_layer_order_and_separate_sound(self):
+        pic = dict(self.clip, kind="video", rotation=20, videoFx="mono")
+        cc = dict(self.clip, kind="caption", track=2, cues=[{"in":0,"out":1,"text":"TEST"}])
+        cover = dict(self.clip, kind="video", asset=self.overlay, track=3)
+        p = self.project([pic, cc, cover])
+        p["tracks"] = [1,2,3]
+        covered = self.pixels(p)
+        p["tracks"] = [1,3,2]
+        self.assertNotEqual(covered, self.pixels(p))
+        wav = self.root / "separate.wav"
+        render(p, self.assets, wav, 96, 64, 24)
+        self.assertFalse(any(ff("-i",wav,"-f","s16le","pipe:1")))
+        p["clips"].append(dict(self.clip, kind="audio", track=-1, audioFx="voice"))
+        render(p, self.assets, wav, 96, 64, 24)
+        self.assertTrue(any(ff("-i",wav,"-f","s16le","pipe:1")))
+        self.assertTrue(Path(self.assets[self.base]["wave"]).is_file())
+
     def test_project_roundtrip_and_source_integrity(self):
         p = self.project()
         workspace = Workspace()

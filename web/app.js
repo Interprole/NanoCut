@@ -74,13 +74,14 @@ function preview() {
     p = ed.p,
     active = p.clips
       .filter((c) => f >= c.start && f < c.start + c.length)
-      .sort((a, b) => a.track - b.track || a.start - b.start);
+      .sort((a, b) => tracks().indexOf(a.track) - tracks().indexOf(b.track) || a.start - b.start);
   const ids = new Set(active.map((c) => c.id));
   for (const [id, el] of mediaNodes) {
     if (
       !ids.has(id) ||
       el.dataset.asset !== p.clips.find((c) => c.id === id)?.asset
     ) {
+      disconnectFx(el);
       el.pause?.();
       el.removeAttribute("src");
       el.load?.();
@@ -94,7 +95,7 @@ function preview() {
     if (!a) continue;
     let el = mediaNodes.get(c.id);
     if (!el) {
-      el = node(a.still ? "img" : a.video ? "video" : "audio");
+      el = node(c.kind === "caption" ? "div" : a.still ? "img" : a.video ? "video" : "audio");
       el.dataset.asset = c.asset;
       el.dataset.clip = c.id;
       el.preload = "auto";
@@ -109,22 +110,36 @@ function preview() {
               ". Try importing a converted copy.",
           );
       };
-      el.src = "media/" + c.asset;
+      if (c.kind !== "caption") el.src = "media/" + c.asset;
       el.draggable = false;
       $("layers").append(el);
       mediaNodes.set(c.id, el);
     }
     const time = c.offset + ((f - c.start) * c.rate) / p.fps;
-    el.hidden = c.track === 0 || !a.video;
+    if (c.kind === "caption") {
+      el.className = "caption-layer";
+      el.style.zIndex=z+1;
+      const text=c.cues.filter(q=>q.in<=time && time<q.out).map(q=>q.text).join("\n");
+      if (el.dataset.value !== c.style+text) {
+        el.replaceChildren(node("div","cue "+c.style,text));
+        el.dataset.value=c.style+text;
+      }
+      el.hidden=!text;
+      continue;
+    }
+    el.hidden = c.track <= 0 || !a.video;
     Object.assign(el.style, {
       left: c.x * 100 + "%",
       top: c.y * 100 + "%",
       width: c.scale * 100 + "%",
       height: c.scale * 100 + "%",
       zIndex: z + 1,
+      transform: "translate(-50%,-50%) rotate("+(c.rotation||0)+"deg)"+(c.videoFx==="mirror"?" scaleX(-1)":""),
+      filter: ({mono:"grayscale(1)",negative:"invert(1)"})[c.videoFx] || "",
     });
     if (!a.still) {
-      el.volume = clamp(c.volume, 0, 1);
+      el.volume = c.kind === "video" ? 0 : clamp(c.volume, 0, 1);
+      applyAudioFx(el,c);
       const rate = c.rate * Number($("play-rate").value);
       el.playbackRate = clamp(rate, 0.0625, 16);
       if (el.readyState >= 1) {
@@ -161,7 +176,8 @@ function togglePlay() {
     return;
   }
   if (!endFrame()) return;
-  if (ed.frame >= endFrame()) seek(0);
+  if (ed.loop && ed.range && (ed.frame < ed.range.a || ed.frame >= ed.range.b)) seek(ed.range.a);
+  else if (ed.frame >= endFrame()) seek(0);
   ed.playing = true;
   clock = performance.now();
   startFrame = ed.frame;
@@ -174,6 +190,9 @@ function togglePlay() {
       Math.floor(
         ((now - clock) * ed.p.fps * Number($("play-rate").value)) / 1000,
       );
+    if (ed.loop && ed.range && f >= Math.min(endFrame(),ed.range.b)) {
+      seek(ed.range.a,true); startFrame=ed.frame; clock=now; raf=requestAnimationFrame(step); return;
+    }
     if (f >= endFrame()) {
       stopPlay();
       seek(endFrame());
@@ -321,17 +340,11 @@ function inspector() {
     host.append(div);
     return div;
   };
-  const g = group(a.name);
+  const g = group(c.kind === "caption" ? "Caption layer" : a.name);
   inspectField(g, "Track", "select", c.track, (v) => (c.track = +v), {
-    options: a.video
-      ? [
-          [2, "V2 · Overlay"],
-          [1, "V1 · Video"],
-          [0, "A1 · Audio"],
-        ]
-      : [[0, "A1 · Audio"]],
+    options: tracks().filter(t => (t>0)===(c.track>0)).map(t => [t, trackName(t)]),
   });
-  inspectField(g, "Start frame", "number", c.start, (v) => (c.start = v), {
+  inspectField(g, "Start frame", "number", c.start, (v) => {const group=selectedClips(), delta=Math.max(v-c.start,-Math.min(...group.map(k=>k.start))); for(const item of group) item.start+=delta;}, {
     min: 0,
     max: 10000000,
     step: 1,
@@ -345,6 +358,8 @@ function inspector() {
       for (const item of ed.p.clips
         .filter((item) => item.track === c.track)
         .sort((a, b) => a.start - b.start)) {
+        const delta = next-item.start;
+        if(item.link) for(const mate of ed.p.clips.filter(q=>q!==item && q.link===item.link && q.track!==item.track)) mate.start=Math.max(0,mate.start+delta);
         item.start = next;
         next += item.length;
       }
@@ -361,7 +376,7 @@ function inspector() {
     "Length (frames)",
     "number",
     c.length,
-    (v) => (c.length = v),
+    (v) => { for(const item of timingMates(c)) item.length=v; },
     { min: 1, max: available, step: 1 },
   );
   inspectField(
@@ -370,12 +385,14 @@ function inspector() {
     "number",
     +c.offset.toFixed(4),
     (v) => {
+      const mates = timingMates(c);
       c.offset = v;
       if (!a.still)
         c.length = Math.min(
           c.length,
           Math.max(1, Math.round(((a.duration - v) * fps) / c.rate)),
         );
+      for(const mate of mates) {mate.offset=v; mate.length=c.length;}
     },
     { min: 0, max: Math.max(0, a.duration - 0.001), step: "any" },
   );
@@ -385,12 +402,13 @@ function inspector() {
     "number",
     c.rate,
     (v) => {
-      c.length = Math.max(1, Math.round((c.length * c.rate) / v));
-      c.rate = v;
+      for(const item of timingMates(c)) {
+        item.length=Math.max(1, Math.round(item.length*item.rate/v)); item.rate=v;
+      }
     },
-    { min: 0.25, max: 4, step: "any" },
+    { min: 0.0001, max: 10000, step: "any" },
   );
-  if (a.video && c.track > 0) {
+  if (c.kind !== "caption" && a.video && c.track > 0) {
     const t = group("Transform");
     for (const [key, label, lo, hi] of [
       ["scale", "Size (%)", 5, 200],
@@ -406,15 +424,19 @@ function inspector() {
         { min: lo, max: hi, step: 1 },
       );
     }
+    inspectField(t,"Rotation (°)","number",c.rotation||0,v=>c.rotation=v,{min:-360,max:360,step:"any"});
+    inspectField(t,"Video effect","select",c.videoFx||"",v=>c.videoFx=v,
+      {options:[["","Original"],["mono","Black and white"],["mirror","Mirror"],["negative","Negative"]]});
+    t.append(node("p","small","Drag to position. Shift-drag to resize. Alt-drag to rotate. Right-click to change layer order."));
     t.append(
-      button("Center", "Align to canvas center", () => {
+      button("Reset transform", "Reset position, scale and rotation", () => {
         checkpoint();
-        c.x = c.y = 0.5;
+        c.x = c.y = 0.5; c.rotation=0; c.scale=1;
         changed("Clip centered");
       }),
     );
   }
-  if (a.audio) {
+  if (a.audio && c.kind !== "video" && c.kind !== "caption") {
     const t = group("Audio");
     inspectField(
       t,
@@ -424,15 +446,19 @@ function inspector() {
       (v) => (c.volume = v / 100),
       { min: 0, max: 100 },
     );
+    inspectField(t,"Audio effect","select",c.audioFx||"",v=>c.audioFx=v,
+      {options:[["","Original"],["voice","Speech high-pass"],["soft","Soft low-pass"]]});
     inspectField(t, "Preview only", "checkbox", c.guide, (v) => (c.guide = v));
   }
   const t = group("Captions & local AI");
-  inspectField(t, "Template", "select", c.style, (v) => (c.style = v), {
-    options: styles.map((s) => [s, s]),
-  });
+  styleGallery(t,c.style,v=>{checkpoint();c.style=v;changed();});
   const actions = [["Edit captions", () => editCues(c)]];
-  if (a.audio) actions.push(["Transcribe with Whisper", () => whisper(c)]);
-  if (a.video) actions.push(["Remove background", () => background(c)]);
+  if (a.audio && c.kind !== "caption") {
+    actions.push(["Transcribe with Whisper", () => whisper(c)],
+      ["Dub voice or script…", () => whisper(c, cc=>voiceDialog(cc))]);
+  }
+  if(c.cues.length) actions.push(["Translate subtitles…",()=>translateDialog(c)],["Voice these captions…",()=>voiceDialog(c)]);
+  if (a.video && c.track>0 && c.kind !== "caption") actions.push(["Remove background", () => background(c)]);
   for (const [label, fn] of actions) {
     const b = button(label, label, safe(fn));
     b.className = "wide";
@@ -554,7 +580,7 @@ function replaceProject(doc) {
   clearTimeout(autoTimer);
   revision++;
   Object.assign(ed, {
-    p: doc.project,
+    p: doc.project, multi: [], range:null, loop:false,
     selected: doc.project.clips[0]?.id || null,
     activeAsset: null,
     frame: 0,
@@ -584,6 +610,9 @@ async function fileAction(action) {
   $("file-menu").hidden = true;
   if (action === "save" || action === "save-as")
     return save(action === "save-as");
+  if (action === "releases") return window.open(releasePage,"_blank","noopener");
+  if (action === "tools") return toolDialog();
+  if (action === "updates") return checkUpdates(true);
   if (!permissionToSwitch()) return;
   stopPlay();
   clearTimeout(autoTimer);
@@ -728,7 +757,7 @@ function seconds(v) {
     .reduce((acc, n) => acc * 60 + Number(n), 0);
 }
 function downloadDialog(guide = false) {
-  showForm(
+  const {controls,help}=showForm(
     guide ? "Import TikTok guide audio" : "Download media",
     [
       {
@@ -738,6 +767,7 @@ function downloadDialog(guide = false) {
         required: true,
         placeholder: "https://…",
       },
+      {key:"browser",label:"Use my signed-in browser for this download",options:[["","Public session"],...["firefox","chrome","edge","brave","opera","vivaldi"].map(b=>[b,b])]},
       { key: "from", label: "Start", value: "0:00" },
       {
         key: "to",
@@ -778,7 +808,7 @@ function downloadDialog(guide = false) {
       return (async () => {
         const results = await task(
           "download",
-          { url: v.url, from, to, format: v.format, transfer: v.transfer },
+          { url: v.url, browser:v.browser, from, to, format: v.format, transfer: v.transfer },
           "Download media",
         );
         if (!results) return;
@@ -788,7 +818,7 @@ function downloadDialog(guide = false) {
         if (v.place !== "pool") {
           const c = addClip(
             a.id,
-            v.place === "guide" ? 0 : v.place === "overlay" ? 2 : undefined,
+            v.place === "guide" ? 0 : v.place === "overlay" ? newTrack(true) : undefined,
             v.place === "append" ? undefined : ed.frame,
           );
           c.guide = v.place === "guide";
@@ -796,12 +826,15 @@ function downloadDialog(guide = false) {
         changed("Downloaded · " + a.name);
       })();
     },
-    "Choose destination…",
-    "Select the source interval, then choose the folder and filename.",
+    "Download",
+    "Downloads are saved in the project media folder.",
   );
+  linkPreview(controls.url,help);
 }
-function whisper(c) {
-  const duration = (c.length * c.rate) / ed.p.fps;
+function whisper(c, after) {
+  const region = clipRegion(c);
+  const offset=c.offset+(region.start-c.start)*c.rate/ed.p.fps;
+  const duration = region.length*c.rate/ed.p.fps;
   const { controls, help } = showForm(
     "Transcribe clip",
     [
@@ -816,6 +849,7 @@ function whisper(c) {
         label: "Spoken language",
         placeholder: "Auto-detect, or enter en, ru, fa…",
       },
+      {key:"script",label:"Optional transcript · one caption per line",area:true,rows:3,placeholder:"Paste the words spoken in the recording to align them with Whisper."},
       {
         key: "style",
         label: "Caption template",
@@ -830,7 +864,7 @@ function whisper(c) {
         {
           asset: c.asset,
           model: v.model,
-          offset: c.offset,
+          offset, script:v.script.trim(),
           duration,
           language: v.language.trim().toLowerCase(),
         },
@@ -839,15 +873,15 @@ function whisper(c) {
       if (!result) {
         if (changeModel) {
           changeModel = false;
-          whisper(c);
+          whisper(c,after);
         }
         return;
       }
       checkpoint();
-      c.cues = result.cues;
-      c.style = v.style;
+      const cc = captionLayer(c,result.cues,v.style,region);
       localStorage.setItem("speed-" + v.model, String(result.ratio));
       changed(result.cues.length + " caption segments created");
+      if(after && result.cues.length) after(cc);
     },
     "Transcribe",
   );
@@ -863,8 +897,10 @@ function whisper(c) {
       formatTime(Math.max(2, duration * ratio * 1.6)) +
       " · " +
       (observed ? "based on your last run" : "rough CPU estimate") +
-      ". Model loading time is extra. On Windows, add models in NanoCut Setup.";
+      ". Model loading time is extra. Add missing models in File → Models and tools.";
   }
+  styleGallery(controls.style.parentElement, controls.style.value, v=>controls.style.value=v);
+  controls.style.hidden=true;
   controls.model.onchange = estimate;
   estimate();
 }
@@ -917,7 +953,8 @@ function editCues(c) {
           return { in: start, out: end, text };
         });
       checkpoint();
-      c.cues = cues;
+      if(c.kind==="caption") c.cues=cues;
+      else { c.cues=[]; captionLayer(c,cues,c.style); }
       changed("Captions updated");
     },
     "Save captions",
@@ -953,8 +990,8 @@ function background(c) {
       }));
       changed("Background removed · original retained in media pool");
     },
-    "Choose destination…",
-    "Create a transparent foreground from the selected source interval. Videos render locally at up to 1280 px on the long edge. On Windows, select background removal in NanoCut Setup.",
+    "Remove background",
+    "Save a transparent foreground from the selected source interval. Videos render locally at up to 1280 px on the long edge. On Windows, select background removal in NanoCut Setup.",
   );
 }
 function tiktok() {
@@ -990,7 +1027,7 @@ function tiktok() {
         checkpoint();
         register(r);
         for (const a of r)
-          if (a.audio) {
+          if (a.audio && c.kind !== "video" && c.kind !== "caption") {
             const c = addClip(a.id, 0, ed.frame);
             c.guide = true;
           }
@@ -1024,7 +1061,8 @@ function initCanvasDrag() {
     inspector();
     drawTimeline();
     updateButtons();
-    drag = { c, x: c.x, y: c.y, px: e.clientX, py: e.clientY, moved: false };
+    selectClip(c);
+    drag = { c, mode:e.shiftKey?"scale":e.altKey?"rotate":"move", scale:c.scale, rotation:c.rotation||0, x: c.x, y: c.y, px: e.clientX, py: e.clientY, moved: false };
     stage.setPointerCapture(e.pointerId);
   });
   stage.addEventListener("pointermove", (e) => {
@@ -1036,6 +1074,11 @@ function initCanvasDrag() {
     if (!drag.moved) {
       checkpoint();
       drag.moved = true;
+    }
+    if (drag.mode !== "move") {
+      if(drag.mode==="scale") c.scale=clamp(drag.scale*Math.exp((drag.py-e.clientY)/110),.05,2);
+      else c.rotation=clamp(drag.rotation+(e.clientX-drag.px),-360,360);
+      preview(); return;
     }
     const fitScale =
       Math.min(rect.width / a.width, rect.height / a.height) * c.scale;
@@ -1062,6 +1105,7 @@ function initCanvasDrag() {
 async function init() {
   initTimeline();
   initCanvasDrag();
+  initStudio();
   settings = await api("state");
   $("file-menu").querySelector('[data-action="recover"]').disabled =
     !settings.recover;
@@ -1185,6 +1229,7 @@ async function init() {
     }
   });
   refresh();
+  checkUpdates(false);
   if (settings.recover)
     status("Previous session available in File → Recover last session");
 }

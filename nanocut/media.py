@@ -207,8 +207,9 @@ def render(p, assets, dest, width, height, fps, notify=lambda *args: None):
     ratio = n(p["width"], 16, 7680) / n(p["height"], 16, 7680)
     width = max(2, min(width, round(height * ratio / 2) * 2))
     height = max(2, min(height, round(width / ratio / 2) * 2))
+    order = {t: i for i, t in enumerate(p.get("tracks", []))}
     clips = sorted(
-        (c for c in p["clips"] if not c.get("guide")), key=lambda c: (c["track"], c["start"])
+        (c for c in p["clips"] if not c.get("guide")), key=lambda c: (order.get(c["track"], c["track"]), c["start"])
     )
     if not clips:
         raise ValueError("Add a clip to the timeline first.")
@@ -218,13 +219,23 @@ def render(p, assets, dest, width, height, fps, notify=lambda *args: None):
     if video:
         filters.append(f"color=c=black:s={width}x{height}:r={fps}:d={total:.9f}[v0]")
     backdrop = "v0"
+    caption_layers = {}
+    input_index = 0
     for i, c in enumerate(clips):
+        if c.get("kind") == "caption":
+            if video:
+                caption_layers[i] = subtitle_file(dict(p, clips=[c]), True)
+                filters.append(f"[{backdrop}]ass=layer{i}.ass[layer{i}]")
+                backdrop = f"layer{i}"
+            continue
+        stream = input_index
+        input_index += 1
         asset = assets[c["asset"]]
         dur = c["length"] / base
         start = c["start"] / base
         first_frame = (c["start"] * fps + base - 1) // base
         past_last_frame = ((c["start"] + c["length"]) * fps + base - 1) // base
-        rate = n(c["rate"], 0.25, 4)
+        rate = n(c["rate"], 0.0001, 10000)
         offset = n(c["offset"], 0, 10**8)
         volume = n(c["volume"], 0, 1)
         if asset["still"]:
@@ -238,17 +249,22 @@ def render(p, assets, dest, width, height, fps, notify=lambda *args: None):
             size = n(c["scale"], 0.05, 2)
             sw, sh = max(2, round(width * size / 2) * 2), max(2, round(height * size / 2) * 2)
             x, y = n(c["x"], -1, 2), n(c["y"], -1, 2)
+            effects = {"mono": "hue=s=0,", "mirror": "hflip,", "negative": "negate=components=r+g+b,"}
+            angle = math.radians(n(c.get("rotation", 0), -360, 360))
+            fx = effects.get(c.get("videoFx"), "")
+            rotation = f"rotate={angle}:ow=rotw({angle}):oh=roth({angle}):c=black@0," if angle else ""
             filters += [
-                f"[{i}:v:0]setpts=(PTS-STARTPTS)/{rate:.9f},fps={fps}:round=near,"
+                f"[{stream}:v:0]setpts=(PTS-STARTPTS)/{rate:.9f},fps={fps}:round=near,"
                 f"scale={sw}:{sh}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1,"
-                f"format=yuva420p,tpad=stop_mode=clone:stop_duration={1 / fps:.9f},setpts=PTS+{first_frame}[clip{i}]",
+                f"format=yuva420p,{fx}{rotation}tpad=stop_mode=clone:stop_duration={1 / fps:.9f},setpts=PTS+{first_frame}[clip{i}]",
                 f"[{backdrop}][clip{i}]overlay=x={x}*W-w/2:y={y}*H-h/2:eof_action=pass:repeatlast=0:"
                 f"enable='gte(n,{first_frame})*lt(n,{past_last_frame})'[v{i + 1}]",
             ]
             backdrop = f"v{i + 1}"
-        if asset["audio"] and volume:
+        if asset["audio"] and volume and c.get("kind") != "video":
+            af = {"voice":"highpass=f=160,", "soft":"lowpass=f=2400,"}.get(c.get("audioFx"), "")
             filters.append(
-                f"[{i}:a:0]asetpts=PTS-STARTPTS,aresample=48000,{atempo(rate)},volume={volume},"
+                f"[{stream}:a:0]asetpts=PTS-STARTPTS,aresample=48000,{af}{atempo(rate)},volume={volume},"
                 f"atrim=duration={dur:.9f},adelay={round(start * 48000)}S:all=1[a{i}]"
             )
             audio.append(f"[a{i}]")
@@ -259,8 +275,11 @@ def render(p, assets, dest, width, height, fps, notify=lambda *args: None):
     dest = Path(dest).resolve()
     with tempfile.TemporaryDirectory(prefix=".nanocut-", dir=dest.parent) as tmp:
         tmp = Path(tmp)
-        if video and any(captions(p)):
-            (tmp / "captions.ass").write_text(subtitle_file(p, True), encoding="utf-8")
+        for i, content in caption_layers.items():
+            (tmp / f"layer{i}.ass").write_text(content, encoding="utf-8")
+        legacy = dict(p, clips=[c for c in clips if c.get("kind") != "caption"])
+        if video and any(captions(legacy)):
+            (tmp / "captions.ass").write_text(subtitle_file(legacy, True), encoding="utf-8")
             filters.append(f"[{backdrop}]ass=captions.ass[captioned]")
             backdrop = "captioned"
         if video and (width, height) != (output_w, output_h):
