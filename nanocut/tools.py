@@ -19,7 +19,7 @@ def pip_install(args, notify):
     proc = subprocess.run([sys.executable, "-m", "pip", "--disable-pip-version-check", "install", "--no-input", *args],
                           capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     if proc.returncode:
-        raise ValueError(proc.stderr.decode(errors="replace")[-1500:])
+        raise ValueError(proc.stderr.decode(errors="replace")[-1500:] or f"Package installation stopped (exit {proc.returncode}).")
 
 
 def install(component, notify):

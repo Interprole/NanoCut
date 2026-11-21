@@ -65,25 +65,8 @@ def translate(d, notify):
     if source == target:
         raise ValueError("Choose two different languages.")
     if d["provider"] == "local":
-        from .tools import ensure_package
-        ensure_package("argostranslate", "argostranslate>=1.9,<2", notify)
-        from argostranslate import translate as argos, package
-        def get_pair():
-            languages = {l.code: l for l in argos.get_installed_languages()}
-            if source in languages and target in languages:
-                return languages[source].get_translation(languages[target])
-        pair = get_pair()
-        if not pair:
-            notify("Finding the local translation package", None)
-            package.update_package_index()
-            candidate = next((p for p in package.get_available_packages()
-                              if p.from_code == source and p.to_code == target), None)
-            if not candidate:
-                raise ValueError("No direct Argos model for this language pair. Choose the API or install a pivot pair.")
-            package.install_from_path(candidate.download())
-            pair = get_pair()
-        if not pair:
-            raise ValueError("The translation model could not be loaded.")
+        from .translation import CaptionTranslator
+        pair = CaptionTranslator(source, target, notify)
     cues = []
     for i, cue in enumerate(d["cues"]):
         notify(f"Translating caption {i+1} of {len(d['cues'])}", i/len(d["cues"]))
@@ -133,6 +116,8 @@ def piper_voice(name, notify):
     if name not in PIPER_VOICES:
         raise ValueError("Unknown Piper voice.")
     ensure_package("piper", "piper-tts>=1.3,<2", notify)
+    import onnxruntime
+    onnxruntime.disable_telemetry_events()
     from piper import PiperVoice
     folder = Path.home() / ".nanocut" / "voices"
     folder.mkdir(parents=True, exist_ok=True)

@@ -27,6 +27,7 @@ function captionLayer(c,cues,style,region={start:c.start,length:c.length}) {
   const layer={...copy(c),...region,id:uid(),kind:"caption",track:newTrack(true,c.track>0?c.track:undefined),
     offset:c.offset+(region.start-c.start)*c.rate/ed.p.fps,style,cues,volume:0,guide:false};
   delete layer.link;
+  layer.hideCaptions=false;
   ed.p.clips.push(layer); selectClip(layer); return layer;
 }
 async function checkUpdates(manual) {
@@ -92,6 +93,7 @@ function translateDialog(c) {
       if(!result) return;
       checkpoint();
       const layer=captionLayer(c,result,c.style,region); layer.offset=0;layer.rate=1;
+      if(c.kind==="caption" && region.length===c.length) c.hideCaptions=true;
       changed("Translated caption layer created");
     },"Translate","Local mode downloads the selected Argos language pair once. API mode sends caption text to OpenAI.");
   function update(){for(const key of ["model","key"]) controls[key].parentElement.hidden=controls.provider.value!=="openai";}

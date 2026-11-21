@@ -215,6 +215,8 @@ def transcribe(d, notify):
     except ImportError:
         raise ValueError("Install local AI tools first. Select the AI components in NanoCut Setup.") from None
     import numpy as np
+    import onnxruntime
+    onnxruntime.disable_telemetry_events()
 
     model = d["model"]
     if model not in MODELS:
@@ -277,6 +279,8 @@ def cutout(d, notify):
     w, h = (max(2, round(v * scale / 2) * 2) for v in (info["width"], info["height"]))
     if os.getenv("NANOCUT_INSTALLED") == "1" and not (Path(os.environ["LOCALAPPDATA"]) / "NanoCutRuntime" / "foreground-ready").is_file():
         raise ValueError("Select Local background removal in NanoCut 1.1.0.1 Setup and retry.")
+    import onnxruntime
+    onnxruntime.disable_telemetry_events()
     notify("Loading background model", None)
     session = new_session("u2netp", providers=["CPUExecutionProvider"])
     with tempfile.TemporaryDirectory(dir=dest.parent) as tmp:

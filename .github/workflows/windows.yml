@@ -96,8 +96,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v1.1.0.1 >/dev/null 2>&1; then exit 0; fi
-          gh release create v1.1.0.1 dist/NanoCut-1.1.0.1-Setup.exe --target "$GITHUB_SHA" --title 'NanoCut 1.1.0.1' --notes 'Linked multitrack editing, frame ranges, script alignment, local and API dubbing, translation, project media folders and in-app model management.'
+          tag=v1.1.0.1
+          asset=NanoCut-1.1.0.1-Setup.exe
+          notes=$(mktemp)
+          cat > "$notes" <<EOF
+          Linked multitrack editing, frame ranges, script-aligned captions and dubbing. This Windows installer includes offline subtitle translation with CTranslate2 and corrected local guide-audio import.
+
+          [Installer build 2 source](https://github.com/Interprole/NanoCut/tree/$GITHUB_SHA)
+          EOF
+          if gh release view "$tag" --json body --jq .body | grep -Fq 'Installer build 2 source'; then exit 0; fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "dist/$asset" --clobber
+            gh release edit "$tag" --notes-file "$notes"
+          else
+            gh release create "$tag" "dist/$asset" --target "$GITHUB_SHA" --title 'NanoCut 1.1.0.1' --notes-file "$notes"
+          fi
           cp dist/NanoCut-1.1.0.1-Setup.exe downloads/NanoCut-Setup.exe
           git config user.name github-actions
           git config user.email github-actions@users.noreply.github.com

@@ -124,7 +124,7 @@ function preview() {
         el.replaceChildren(node("div","cue "+c.style,text));
         el.dataset.value=c.style+text;
       }
-      el.hidden=!text;
+      el.hidden=!text || !!c.hideCaptions;
       continue;
     }
     el.hidden = c.track <= 0 || !a.video;
@@ -267,6 +267,7 @@ function bin() {
   }
 }
 function refresh() {
+  $("loop-range").setAttribute("aria-pressed",!!ed.loop && !!ed.range);
   $("name").value = ed.p.name;
   $("welcome").hidden = !!ed.p.clips.length;
   $("monitor-meta").textContent =
@@ -451,6 +452,7 @@ function inspector() {
     inspectField(t, "Preview only", "checkbox", c.guide, (v) => (c.guide = v));
   }
   const t = group("Captions & local AI");
+  if(c.kind==="caption") inspectField(t,"Show captions","checkbox",!c.hideCaptions,v=>c.hideCaptions=!v);
   styleGallery(t,c.style,v=>{checkpoint();c.style=v;changed();});
   const actions = [["Edit captions", () => editCues(c)]];
   if (a.audio && c.kind !== "caption") {
@@ -1027,7 +1029,7 @@ function tiktok() {
         checkpoint();
         register(r);
         for (const a of r)
-          if (a.audio && c.kind !== "video" && c.kind !== "caption") {
+          if (a.audio) {
             const c = addClip(a.id, 0, ed.frame);
             c.guide = true;
           }
@@ -1137,6 +1139,7 @@ async function init() {
   };
   $("play").onclick = togglePlay;
   $("play-rate").onchange = () => {
+    if (!$("play-rate").reportValidity() || Number($("play-rate").value)<=0) $("play-rate").value="1";
     if (ed.playing) {
       stopPlay();
       togglePlay();

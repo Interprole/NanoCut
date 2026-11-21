@@ -145,7 +145,7 @@ def atempo(rate):
 def captions(p):
     fps = p["fps"]
     for c in sorted(p["clips"], key=lambda x: (x["track"], x["start"])):
-        if c.get("guide"):
+        if c.get("guide") or c.get("hideCaptions"):
             continue
         for cue in c.get("cues", []):
             start = max(0, (cue["in"] - c["offset"]) / c["rate"])
